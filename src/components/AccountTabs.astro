@@ -1,0 +1,19 @@
+---
+interface Props { active: "orders" | "addresses" | "returns" }
+const { active } = Astro.props
+---
+
+<nav class="account-tabs" aria-label="Sekcje konta">
+  <a href="/account" aria-current={active === "orders" ? "page" : undefined}>Moje zakupy</a>
+  <a href="/account/addresses" aria-current={active === "addresses" ? "page" : undefined}>Adresy</a>
+  <a href="/account/returns" aria-current={active === "returns" ? "page" : undefined}>Zwroty</a>
+</nav>
+
+<style>
+  .account-tabs { display:flex; gap:34px; margin:0 0 54px; border-bottom:1px solid #cfc9bd; }
+  .account-tabs a { position:relative; min-height:48px; display:flex; align-items:center; color:#73776f; text-decoration:none; font-size:.78rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+  .account-tabs a:hover { color:#35503a; }
+  .account-tabs a[aria-current="page"] { color:#20221f; }
+  .account-tabs a[aria-current="page"]::after { content:""; position:absolute; right:0; bottom:-1px; left:0; height:2px; background:#35503a; }
+  @media(max-width:600px) { .account-tabs { gap:24px; margin-bottom:40px; }.account-tabs a { flex:1; justify-content:center; } }
+</style>

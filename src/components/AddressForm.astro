@@ -1,0 +1,51 @@
+---
+import type { HttpTypes } from "@medusajs/types"
+
+interface Props {
+  address?: HttpTypes.StoreCustomerAddress
+  countries: Array<{ code: string; label: string }>
+}
+const { address, countries } = Astro.props
+const editing = Boolean(address)
+---
+
+<form class="address-form" method="post" action="/api/account/addresses">
+  <input type="hidden" name="intent" value={editing ? "update" : "create"} />
+  {address && <input type="hidden" name="address_id" value={address.id} />}
+  <div class="field-grid">
+    <label class="full-field">Nazwa adresu *<input name="address_name" required maxlength="60" placeholder="Dom, biuro…" value={address?.address_name || ""} /></label>
+    <label>Imię *<input name="first_name" autocomplete="given-name" required value={address?.first_name || ""} /></label>
+    <label>Nazwisko *<input name="last_name" autocomplete="family-name" required value={address?.last_name || ""} /></label>
+    <label class="full-field">Firma <input name="company" autocomplete="organization" value={address?.company || ""} /></label>
+    <label class="full-field">Ulica i numer *<input name="address_1" autocomplete="address-line1" required value={address?.address_1 || ""} /></label>
+    <label class="full-field">Lokal, piętro itp. <input name="address_2" autocomplete="address-line2" value={address?.address_2 || ""} /></label>
+    <label>Kod pocztowy *<input name="postal_code" autocomplete="postal-code" required value={address?.postal_code || ""} /></label>
+    <label>Miasto *<input name="city" autocomplete="address-level2" required value={address?.city || ""} /></label>
+    <label>Województwo / region <input name="province" autocomplete="address-level1" value={address?.province || ""} /></label>
+    <label>Kraj *<select name="country_code" autocomplete="country" required>
+      <option value="">Wybierz kraj</option>
+      {countries.map((country) => <option value={country.code} selected={country.code === address?.country_code?.toLowerCase()}>{country.label}</option>)}
+    </select></label>
+    <label class="full-field">Telefon <input name="phone" type="tel" autocomplete="tel" value={address?.phone || ""} /></label>
+  </div>
+  <div class="defaults">
+    <label><input type="checkbox" name="is_default_shipping" checked={address?.is_default_shipping} /> Domyślny adres dostawy</label>
+    <label><input type="checkbox" name="is_default_billing" checked={address?.is_default_billing} /> Domyślny adres rozliczeniowy</label>
+  </div>
+  <button class="save" type="submit">{editing ? "Zapisz zmiany" : "Dodaj adres"} <span aria-hidden="true">→</span></button>
+</form>
+
+<style>
+  .address-form { padding-top:24px; border-top:1px solid #d0cabf; }
+  .field-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+  label { display:grid; gap:8px; color:#5f625d; font-size:.72rem; font-weight:700; letter-spacing:.04em; }
+  .full-field { grid-column:1/-1; }
+  input,select { width:100%; min-height:46px; padding:0 13px; border:1px solid #bbb6ab; border-radius:0; color:#20221f; background:#f8f6f1; font:400 .88rem Inter,ui-sans-serif,sans-serif; }
+  input:focus,select:focus { outline:2px solid #35503a; outline-offset:2px; }
+  .defaults { display:flex; flex-wrap:wrap; gap:22px; margin:22px 0; }
+  .defaults label { display:flex; align-items:center; gap:9px; font-weight:500; letter-spacing:0; }
+  .defaults input { width:18px; min-height:18px; accent-color:#35503a; }
+  .save { min-height:46px; display:inline-flex; align-items:center; gap:34px; padding:0 18px; border:0; color:#fff; background:#35503a; cursor:pointer; font-weight:700; font-size:.78rem; }
+  .save:hover { background:#293f2d; }
+  @media(max-width:600px) { .field-grid { grid-template-columns:1fr; }.full-field { grid-column:auto; }.defaults { align-items:flex-start; flex-direction:column; } }
+</style>

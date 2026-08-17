@@ -1,0 +1,22 @@
+---
+interface Props { class?: string }
+const className = Astro.props.class
+const isLoggedIn = Boolean(await Astro.session?.get("customerToken"))
+const href = isLoggedIn ? "/account" : "/account/login"
+const label = isLoggedIn ? "Panel użytkownika" : "Zaloguj się lub załóż konto"
+---
+
+<a class:list={["account-link", className]} href={href} aria-label={label} title={label}>
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="8" r="3.6" />
+    <path d="M5.3 20c.6-4 3-6 6.7-6s6.1 2 6.7 6" />
+  </svg>
+  {isLoggedIn && <span class="account-dot" aria-hidden="true"></span>}
+</a>
+
+<style>
+  .account-link { position: relative; width: 42px; height: 42px; display: grid; place-items: center; color: #20221f; text-decoration: none; }
+  .account-link svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .account-link:hover { color: #35503a; }
+  .account-dot { position: absolute; top: 4px; right: 2px; width: 9px; height: 9px; border: 2px solid #f5f3ee; border-radius: 50%; background: #35503a; }
+</style>

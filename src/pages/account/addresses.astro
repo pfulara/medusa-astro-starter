@@ -1,0 +1,99 @@
+---
+import type { HttpTypes } from "@medusajs/types"
+import Layout from "../../layouts/Layout.astro"
+import SiteHeader from "../../components/SiteHeader.astro"
+import AccountTabs from "../../components/AccountTabs.astro"
+import AddressForm from "../../components/AddressForm.astro"
+import { listCustomerOrders, retrieveCustomer } from "../../lib/auth"
+import { getStorefrontData, sdk, type ProductCategory } from "../../lib/medusa"
+
+const token = await Astro.session?.get("customerToken")
+if (!token) return Astro.redirect("/account/login?next=/account/addresses")
+
+let customer: HttpTypes.StoreCustomer
+let orderCount = 0
+try {
+  const [customerResult, ordersResult] = await Promise.all([
+    retrieveCustomer(token),
+    listCustomerOrders(token, 1),
+  ])
+  customer = customerResult
+  orderCount = ordersResult.count
+}
+catch {
+  Astro.session?.destroy()
+  return Astro.redirect("/account/login?error=expired&next=/account/addresses")
+}
+
+let categories: ProductCategory[] = []
+try { categories = (await getStorefrontData(1)).categories } catch {}
+
+let countries: Array<{ code: string; label: string }> = []
+try {
+  const { regions } = await sdk.store.region.list({ limit: 100, fields: "id,*countries" })
+  const names = new Intl.DisplayNames(["pl"], { type: "region" })
+  const uniqueCodes = new Set(regions.flatMap((region) => region.countries || []).map((country) => country.iso_2?.toLowerCase()).filter((code): code is string => Boolean(code)))
+  countries = [...uniqueCodes].map((code) => ({ code, label: names.of(code.toUpperCase()) || code.toUpperCase() })).sort((a, b) => a.label.localeCompare(b.label, "pl"))
+} catch {}
+
+const addresses = customer.addresses || []
+const successMessages: Record<string, string> = { create: "Adres został dodany.", update: "Zmiany zostały zapisane.", delete: "Adres został usunięty." }
+const success = successMessages[Astro.url.searchParams.get("success") || ""]
+const error = Astro.url.searchParams.has("error") ? (Astro.url.searchParams.get("error") === "validation" ? "Uzupełnij wszystkie wymagane pola." : "Nie udało się zapisać zmian. Spróbuj ponownie.") : ""
+const countryName = (code?: string | null) => code ? (new Intl.DisplayNames(["pl"], { type: "region" }).of(code.toUpperCase()) || code.toUpperCase()) : ""
+---
+
+<Layout title="Adresy — Atelier" description="Zapisane adresy dostawy i rozliczeniowe w Twoim koncie Atelier.">
+  <SiteHeader categories={categories} />
+  <main class="account-page">
+    <header class="account-heading">
+      <div><p class="eyebrow">Panel klienta</p><h1>Twoje adresy</h1><p>Zapisz dane, by szybciej uzupełniać formularz podczas kolejnych zakupów.</p></div>
+      <form method="post" action="/api/auth/logout"><button type="submit">Wyloguj się</button></form>
+    </header>
+
+    <section class="account-grid" aria-label="Podsumowanie konta">
+      <article><span>Zamówienia</span><strong>{orderCount}</strong></article>
+      <article><span>Zapisane adresy</span><strong>{addresses.length}</strong></article>
+      <article><span>Adres e-mail</span><strong>{customer.email}</strong></article>
+    </section>
+
+    <AccountTabs active="addresses" />
+
+    {success && <p class="notice is-success" role="status">{success}</p>}
+    {error && <p class="notice is-error" role="alert">{error}</p>}
+
+    <section class="addresses" aria-labelledby="addresses-title">
+      <div class="section-heading"><div><p class="eyebrow">Książka adresowa</p><h2 id="addresses-title">Zapisane adresy</h2></div><span>{addresses.length} {addresses.length === 1 ? "adres" : "adresów"}</span></div>
+      {addresses.length ? <div class="address-list">{addresses.map((address) => <article class="address-card">
+        <div class="address-top"><div><p class="address-name">{address.address_name || "Adres"}</p><h3>{address.first_name} {address.last_name}</h3></div><div class="badges">{address.is_default_shipping && <span>Domyślny do dostawy</span>}{address.is_default_billing && <span>Domyślny rozliczeniowy</span>}</div></div>
+        <address>{address.company && <>{address.company}<br /></>}{address.address_1}{address.address_2 && <>, {address.address_2}</>}<br />{address.postal_code} {address.city}{address.province && <>, {address.province}</>}<br />{countryName(address.country_code)}{address.phone && <><br />{address.phone}</>}</address>
+        <div class="actions"><details><summary>Edytuj</summary><AddressForm address={address} countries={countries} /></details><form method="post" action="/api/account/addresses"><input type="hidden" name="intent" value="delete" /><input type="hidden" name="address_id" value={address.id} /><button type="submit">Usuń</button></form></div>
+      </article>)}</div> : <div class="empty"><h3>Nie masz jeszcze zapisanych adresów.</h3><p>Dodaj pierwszy adres, aby później wygodnie użyć go przy zakupach.</p></div>}
+    </section>
+
+    <section class="add-address" aria-labelledby="add-title"><p class="eyebrow">Nowy adres</p><h2 id="add-title">Dodaj adres</h2>{countries.length ? <AddressForm countries={countries} /> : <p class="notice is-error">Nie udało się pobrać listy obsługiwanych krajów. Odśwież stronę i spróbuj ponownie.</p>}</section>
+  </main>
+</Layout>
+
+<style>
+  .account-page { width:min(1200px,calc(100% - 64px)); margin:auto; padding:74px 0 120px; }
+  .account-heading { display:flex; justify-content:space-between; align-items:end; gap:30px; padding-bottom:55px; }
+  .eyebrow { margin:0 0 15px; color:#73776f; font-size:.68rem; font-weight:700; letter-spacing:.18em; text-transform:uppercase; }
+  h1,h2,h3 { font-family:Georgia,"Times New Roman",serif; font-weight:400; letter-spacing:-.045em; }
+  h1 { margin:0; font-size:clamp(3.2rem,7vw,6.4rem); line-height:.95; }
+  .account-heading p:last-child { max-width:600px; margin:22px 0 0; color:#686b65; line-height:1.7; }
+  .account-heading button { min-height:44px; padding:0 18px; border:1px solid #9b9a94; color:#30322f; background:transparent; cursor:pointer; }
+  .account-grid { display:grid; grid-template-columns:180px 180px 1fr; gap:1px; margin:28px 0 90px; background:#d6d1c7; border:1px solid #d6d1c7; }
+  .account-grid article { min-height:110px; display:flex; flex-direction:column; justify-content:space-between; padding:20px; background:#ebe7de; }
+  .account-grid span { color:#73776f; font-size:.72rem; text-transform:uppercase; letter-spacing:.1em; }
+  .account-grid strong { overflow-wrap:anywhere; font:400 1.25rem Georgia,"Times New Roman",serif; }
+  .section-heading { display:flex; justify-content:space-between; align-items:end; margin-bottom:30px; }
+  h2 { margin:0; font-size:clamp(2.5rem,5vw,4.2rem); }.section-heading>span { color:#73776f; font-size:.8rem; }
+  .notice { margin:0 0 28px; padding:15px 18px; border:1px solid; font-size:.84rem; }.is-success { color:#2d6238; border-color:#aec6b1; background:#e4eee4; }.is-error { color:#744338; border-color:#d0aaa1; background:#f0e3df; }
+  .address-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+  .address-card { padding:26px; border:1px solid #d0cabf; background:#ebe7de; }.address-top { display:flex; justify-content:space-between; align-items:start; gap:20px; }.address-name { margin:0 0 7px; color:#73776f; font-size:.68rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; }.address-card h3 { margin:0; font-size:1.7rem; }.badges { display:flex; align-items:flex-end; flex-direction:column; gap:6px; }.badges span { padding:5px 8px; color:#2d6238; background:#dce9dc; font-size:.64rem; font-weight:700; }.address-card address { margin:24px 0; color:#5f625d; font-style:normal; font-size:.86rem; line-height:1.75; }
+  .actions { display:flex; align-items:start; gap:14px; border-top:1px solid #d0cabf; padding-top:18px; }.actions details { flex:1; }.actions summary,.actions button { color:#35503a; background:transparent; border:0; cursor:pointer; font-weight:700; font-size:.75rem; }.actions summary { width:max-content; list-style:none; }.actions summary::-webkit-details-marker { display:none; }.actions details[open] summary { margin-bottom:18px; }.actions form button { color:#744338; }
+  .empty { padding:60px 24px; text-align:center; background:#ebe7de; }.empty h3 { margin:0; font-size:2.2rem; }.empty p { color:#686b65; }
+  .add-address { max-width:760px; margin-top:90px; padding:36px; background:#ebe7de; }.add-address h2 { margin-bottom:26px; font-size:2.8rem; }
+  @media(max-width:800px) { .account-page { width:calc(100% - 32px); padding-top:48px; }.account-heading { align-items:start; flex-direction:column; }.account-grid { grid-template-columns:1fr; margin-bottom:65px; }.address-list { grid-template-columns:1fr; }.add-address { margin-top:60px; padding:24px; } }
+</style>

@@ -1,0 +1,58 @@
+---
+interface Props {
+  class?: string
+}
+
+const className = Astro.props.class
+---
+
+<a class:list={["cart-link", className]} href="/cart" aria-label="Koszyk">
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <path d="M3 4h2l2.1 10.1a2 2 0 0 0 2 1.6h7.8a2 2 0 0 0 1.9-1.4L21 7H6" />
+    <circle cx="9.5" cy="19.5" r="1" />
+    <circle cx="17.5" cy="19.5" r="1" />
+  </svg>
+  <span class="cart-count" data-cart-count aria-live="polite" hidden>0</span>
+</a>
+
+<script>
+  import type { HttpTypes } from "@medusajs/types"
+  import { getCartQuantity, retrieveCart } from "../lib/cart"
+
+  function renderCartCount(cart: HttpTypes.StoreCart | null) {
+    const counters = document.querySelectorAll<HTMLElement>("[data-cart-count]")
+    const quantity = getCartQuantity(cart)
+    counters.forEach((counter) => {
+      counter.textContent = String(quantity)
+      counter.hidden = quantity === 0
+    })
+  }
+
+  async function updateCartCount() {
+    try {
+      renderCartCount(await retrieveCart())
+    } catch {
+      renderCartCount(null)
+    }
+  }
+
+  function setupCartCount() {
+    updateCartCount()
+    if (document.documentElement.dataset.cartCounterReady === "true") return
+    document.documentElement.dataset.cartCounterReady = "true"
+    window.addEventListener("atelier:cart-change", (event) => {
+      renderCartCount((event as CustomEvent<HttpTypes.StoreCart | null>).detail)
+    })
+    window.addEventListener("storage", updateCartCount)
+  }
+
+  document.addEventListener("astro:page-load", setupCartCount)
+  setupCartCount()
+</script>
+
+<style>
+  .cart-link { position: relative; width: 42px; height: 42px; display: grid; place-items: center; color: #20221f; text-decoration: none; }
+  .cart-link svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .cart-link:hover { color: #35503a; }
+  .cart-count { position: absolute; top: 0; right: -2px; min-width: 19px; height: 19px; padding: 0 5px; border: 2px solid #f5f3ee; border-radius: 99px; color: #fff; background: #35503a; font-size: .62rem; font-weight: 700; line-height: 15px; text-align: center; }
+</style>

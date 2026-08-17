@@ -1,0 +1,64 @@
+---
+import Layout from "../../../layouts/Layout.astro"
+import SiteHeader from "../../../components/SiteHeader.astro"
+import { formatOrderPrice, getOrderStatus, retrieveCustomer, retrieveCustomerOrder } from "../../../lib/auth"
+import { getStorefrontData, type ProductCategory } from "../../../lib/medusa"
+
+const token = await Astro.session?.get("customerToken")
+const id = Astro.params.id
+if (!token || !id) return Astro.redirect(`/account/login?next=${encodeURIComponent(Astro.url.pathname)}`)
+
+let order
+try {
+  await retrieveCustomer(token)
+  order = await retrieveCustomerOrder(token, id)
+} catch {
+  Astro.session?.destroy()
+  return Astro.redirect(`/account/login?error=expired&next=${encodeURIComponent(Astro.url.pathname)}`)
+}
+if (!order) return new Response("Nie znaleziono zamówienia.", { status: 404 })
+
+let categories: ProductCategory[] = []
+try { categories = (await getStorefrontData(1)).categories } catch {}
+const status = getOrderStatus(order)
+const date = new Intl.DateTimeFormat("pl-PL", { dateStyle: "long", timeStyle: "short" }).format(new Date(order.created_at))
+const address = order.shipping_address
+---
+
+<Layout title={`Zamówienie #${order.display_id} — Atelier`} description={`Szczegóły zamówienia #${order.display_id}.`}>
+  <SiteHeader categories={categories} />
+  <main class="order-page">
+    <a class="back" href="/account"><span aria-hidden="true">←</span> Wróć do konta</a>
+    <header class="order-heading"><div><p class="eyebrow">Zamówienie #{order.display_id}</p><h1>Szczegóły zamówienia</h1><p>Złożone {date}</p></div><span class:list={["status", `is-${status.tone}`]}>{status.label}</span></header>
+
+    <div class="order-layout">
+      <section class="items" aria-labelledby="items-title"><h2 id="items-title">Zakupione produkty</h2>
+        <div class="item-list">{order.items?.map((item) => <article class="item">
+          <div class="image-wrap">{item.thumbnail ? <img src={item.thumbnail} alt={item.product_title || item.title} loading="lazy" /> : <span aria-hidden="true">{(item.product_title || item.title).charAt(0)}</span>}</div>
+          <div><h3>{item.product_title || item.title}</h3><p>{item.variant_title && item.variant_title !== "Default" ? item.variant_title : "Wariant podstawowy"}</p><span>Ilość: {item.quantity}</span></div>
+          <strong>{formatOrderPrice(item.total, order.currency_code)}</strong>
+        </article>)}</div>
+      </section>
+
+      <aside>
+        <section class="summary"><h2>Podsumowanie</h2><dl>
+          <div><dt>Produkty</dt><dd>{formatOrderPrice(order.subtotal, order.currency_code)}</dd></div>
+          <div><dt>Dostawa</dt><dd>{formatOrderPrice(order.shipping_total, order.currency_code)}</dd></div>
+          <div><dt>Podatek</dt><dd>{formatOrderPrice(order.tax_total, order.currency_code)}</dd></div>
+          {(order.discount_total || 0) > 0 && <div><dt>Rabat</dt><dd>−{formatOrderPrice(order.discount_total, order.currency_code)}</dd></div>}
+          <div class="grand-total"><dt>Łącznie</dt><dd>{formatOrderPrice(order.total, order.currency_code)}</dd></div>
+        </dl></section>
+        {address && <section class="address"><h2>Adres dostawy</h2><address>{address.first_name} {address.last_name}<br />{address.address_1}{address.address_2 && <><br />{address.address_2}</>}<br />{address.postal_code} {address.city}<br />{address.country_code?.toUpperCase()}</address></section>}
+      </aside>
+    </div>
+  </main>
+</Layout>
+
+<style>
+  .order-page { width: min(1200px,calc(100% - 64px)); margin: auto; padding: 46px 0 120px; }.back { display:inline-flex; gap:10px; color:#5f625d; text-decoration:none; font-size:.8rem; }.back:hover { color:#35503a; }
+  .order-heading { display:flex; justify-content:space-between; align-items:end; gap:30px; padding:55px 0; border-bottom:1px solid #d6d1c7; }.eyebrow { margin:0 0 14px; color:#73776f; font-size:.68rem; font-weight:700; letter-spacing:.18em; text-transform:uppercase; }h1,h2,h3 { font-family:Georgia,"Times New Roman",serif; font-weight:400; }h1 { margin:0; font-size:clamp(3rem,6vw,5.6rem); letter-spacing:-.055em; }.order-heading p:last-child { margin:18px 0 0; color:#686b65; }
+  .status { padding:8px 12px; border-radius:99px; font-size:.72rem; font-weight:700; white-space:nowrap; }.is-success { color:#2d6238;background:#dce9dc;}.is-progress{color:#365c70;background:#dce8ed}.is-pending{color:#765c2d;background:#eee5ce}.is-muted{color:#6b625e;background:#e5dfdc}
+  .order-layout { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:70px; padding-top:55px; }h2 { margin:0 0 25px; font-size:1.75rem; letter-spacing:-.03em; }.item-list { border-top:1px solid #d0cabf; }.item { display:grid; grid-template-columns:100px 1fr auto; gap:22px; align-items:center; padding:22px 0; border-bottom:1px solid #d0cabf; }.image-wrap { width:100px; aspect-ratio:1; display:grid; place-items:center; overflow:hidden; color:rgba(53,80,58,.35); background:#e5dfd3; font:400 2.8rem Georgia,serif; }.image-wrap img { width:100%;height:100%;object-fit:cover; }.item h3 { margin:0 0 8px; font-size:1.25rem; }.item p,.item span { color:#73776f;font-size:.78rem; }.item p { margin:0 0 8px; }.item strong { font-family:Georgia,serif;font-weight:400; }
+  aside { display:grid; gap:22px;align-content:start; }.summary,.address { padding:27px; background:#ebe7de; }.summary dl { margin:0; }.summary dl div { display:flex;justify-content:space-between;gap:20px;padding:10px 0;color:#5f625d;font-size:.82rem; }.summary dd { margin:0;color:#20221f; }.summary .grand-total { margin-top:10px;padding-top:18px;border-top:1px solid #c8c1b5;color:#20221f;font-weight:700;font-size:1rem; }.address address { color:#5f625d;font-style:normal;line-height:1.75;font-size:.86rem; }
+  @media(max-width:850px){.order-page{width:calc(100% - 32px)}.order-heading{align-items:start;flex-direction:column}.order-layout{grid-template-columns:1fr;gap:40px}.item{grid-template-columns:78px 1fr}.image-wrap{width:78px}.item>strong{grid-column:2}} 
+</style>

@@ -1,0 +1,50 @@
+---
+import Layout from "../../layouts/Layout.astro"
+import SiteHeader from "../../components/SiteHeader.astro"
+import { getStorefrontData, type ProductCategory } from "../../lib/medusa"
+
+if (await Astro.session?.get("customerToken")) return Astro.redirect("/account")
+
+let categories: ProductCategory[] = []
+try { categories = (await getStorefrontData(1)).categories } catch {}
+const error = Astro.url.searchParams.get("error")
+const next = Astro.url.searchParams.get("next") || "/account"
+---
+
+<Layout title="Logowanie — Atelier" description="Zaloguj się do swojego konta Atelier.">
+  <SiteHeader categories={categories} />
+  <main class="auth-page">
+    <section class="auth-card" aria-labelledby="login-title">
+      <p class="eyebrow">Twoje konto</p>
+      <h1 id="login-title">Witaj ponownie.</h1>
+      <p class="lead">Zaloguj się, aby sprawdzić historię i status swoich zamówień.</p>
+      {error && <p class="form-error" role="alert">{error === "missing" ? "Uzupełnij adres e-mail i hasło." : "Nieprawidłowy e-mail lub hasło."}</p>}
+      <form method="post" action="/api/auth/login">
+        <input type="hidden" name="next" value={next} />
+        <label>E-mail<input type="email" name="email" autocomplete="email" required /></label>
+        <label>Hasło<input type="password" name="password" autocomplete="current-password" required /></label>
+        <button type="submit">Zaloguj się <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="switch">Nie masz jeszcze konta? <a href={`/account/register?next=${encodeURIComponent(next)}`}>Załóż konto</a></p>
+    </section>
+  </main>
+</Layout>
+
+<style>
+  .auth-page { width: min(1400px,calc(100% - 64px)); min-height: calc(100vh - 83px); margin: auto; display: grid; place-items: center; padding: 70px 0 110px; }
+  .auth-card { width: min(100%,560px); padding: clamp(32px,6vw,64px); border: 1px solid #d6d0c3; background: #ebe7de; }
+  .eyebrow { margin: 0 0 18px; color: #73776f; font-size: .68rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+  h1 { margin: 0; font: 400 clamp(3rem,7vw,5.2rem)/.95 Georgia,"Times New Roman",serif; letter-spacing: -.055em; }
+  .lead { margin: 22px 0 34px; color: #686b65; line-height: 1.7; }
+  form,label { display: grid; gap: 9px; }
+  form { gap: 20px; }
+  label { color: #4e514c; font-size: .78rem; font-weight: 700; }
+  input { min-height: 50px; padding: 0 14px; border: 1px solid #c6c0b4; border-radius: 0; color: #20221f; background: #f8f6f1; font: inherit; }
+  input:focus { outline: 2px solid #35503a; outline-offset: 2px; }
+  button { min-height: 52px; display: flex; justify-content: space-between; align-items: center; padding: 0 19px; border: 0; color: #fff; background: #35503a; cursor: pointer; font-weight: 700; }
+  button:hover { background: #263e2b; }
+  .form-error { padding: 13px 15px; color: #7e3e33; background: #eee0dc; font-size: .82rem; }
+  .switch { margin: 27px 0 0; color: #686b65; font-size: .84rem; }
+  .switch a { color: #35503a; font-weight: 700; }
+  @media (max-width:760px) { .auth-page { width: calc(100% - 32px); padding: 38px 0 70px; } }
+</style>

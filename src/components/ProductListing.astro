@@ -1,0 +1,118 @@
+---
+import { formatProductPrice, type Product, type ProductCategory } from "../lib/medusa"
+
+interface Props { products: Product[]; categories: ProductCategory[]; fixedCategoryId?: string }
+const { products, categories, fixedCategoryId } = Astro.props
+const prices = products.map((product) => product.variants?.[0]?.calculated_price?.calculated_amount).filter((price): price is number => typeof price === "number")
+const ceiling = Math.max(100, Math.ceil((Math.max(...prices, 100)) / 100) * 100)
+---
+
+<div class="catalog" data-catalog data-fixed-category={fixedCategoryId || ""}>
+  <button class="filters-toggle" type="button" data-filters-toggle aria-expanded="false">Filtry <span data-active-count></span></button>
+  <aside class="filters" data-filters aria-label="Filtry produktów">
+    <div class="filters-heading"><h2>Filtry</h2><button type="button" data-clear>Wyczyść</button></div>
+    {!fixedCategoryId && <fieldset><legend>Kategoria</legend>{categories.map((category) => <label><input type="checkbox" name="category" value={category.id} /> <span>{category.name}</span></label>)}</fieldset>}
+    <fieldset>
+      <legend>Cena</legend>
+      <label><input type="radio" name="price" value="all" checked /> <span>Dowolna</span></label>
+      <label><input type="radio" name="price" value={`0-${Math.round(ceiling * .25)}`} /> <span>Do {Math.round(ceiling * .25)} zł</span></label>
+      <label><input type="radio" name="price" value={`${Math.round(ceiling * .25)}-${Math.round(ceiling * .6)}`} /> <span>{Math.round(ceiling * .25)}–{Math.round(ceiling * .6)} zł</span></label>
+      <label><input type="radio" name="price" value={`${Math.round(ceiling * .6)}-${ceiling + 1}`} /> <span>Od {Math.round(ceiling * .6)} zł</span></label>
+    </fieldset>
+  </aside>
+
+  <section class="results" aria-live="polite">
+    <div class="results-bar"><p><strong data-count>{products.length}</strong> produktów</p><label>Sortuj <select data-sort><option value="default">Polecane</option><option value="price-asc">Cena: rosnąco</option><option value="price-desc">Cena: malejąco</option><option value="name">Nazwa: A–Z</option></select></label></div>
+    <div class="product-grid" data-grid>
+      {products.map((product, index) => {
+        const price = product.variants?.[0]?.calculated_price?.calculated_amount ?? -1
+        return <a class="product-card" href={`/products/${product.handle}`} data-card data-title={product.title.toLocaleLowerCase("pl")} data-price={price} data-categories={product.categories?.map((category) => category.id).join(",") || ""}>
+          <div class="product-image-wrap">
+            {product.thumbnail ? <img src={product.thumbnail} alt={product.title} class="product-image" loading={index < 4 ? "eager" : "lazy"} /> : <div class="image-placeholder" aria-hidden="true"><span>{product.title.charAt(0)}</span></div>}
+          </div>
+          <div class="product-info"><div><p>{product.categories?.[0]?.name || "Kolekcja Atelier"}</p><h3>{product.title}</h3></div><span>{formatProductPrice(product)}</span></div>
+        </a>
+      })}
+    </div>
+    <div class="empty" data-empty hidden><strong>Brak produktów dla wybranych filtrów.</strong><button type="button" data-clear>Wyczyść filtry</button></div>
+  </section>
+</div>
+
+<script>
+  function setupCatalog() {
+    const root = document.querySelector<HTMLElement>("[data-catalog]")
+    if (!root || root.dataset.ready) return
+    root.dataset.ready = "true"
+    const cards = [...root.querySelectorAll<HTMLElement>("[data-card]")]
+    const grid = root.querySelector<HTMLElement>("[data-grid]")
+    const count = root.querySelector<HTMLElement>("[data-count]")
+    const empty = root.querySelector<HTMLElement>("[data-empty]")
+    const sort = root.querySelector<HTMLSelectElement>("[data-sort]")
+    const filters = root.querySelector<HTMLElement>("[data-filters]")
+    const toggle = root.querySelector<HTMLButtonElement>("[data-filters-toggle]")
+
+    const apply = (updateUrl = true) => {
+      const selectedCategories = [...root.querySelectorAll<HTMLInputElement>('input[name="category"]:checked')].map((input) => input.value)
+      const priceValue = root.querySelector<HTMLInputElement>('input[name="price"]:checked')?.value || "all"
+      const [min, max] = priceValue === "all" ? [-Infinity, Infinity] : priceValue.split("-").map(Number)
+      let visible = cards.filter((card) => {
+        const categoryIds = card.dataset.categories?.split(",") || []
+        const categoryMatch = !selectedCategories.length || selectedCategories.some((id) => categoryIds.includes(id))
+        const price = Number(card.dataset.price)
+        const priceMatch = price < 0 || (price >= min && price < max)
+        card.hidden = !(categoryMatch && priceMatch)
+        return !card.hidden
+      })
+      visible.sort((a, b) => sort?.value === "price-asc" ? Number(a.dataset.price) - Number(b.dataset.price) : sort?.value === "price-desc" ? Number(b.dataset.price) - Number(a.dataset.price) : sort?.value === "name" ? (a.dataset.title || "").localeCompare(b.dataset.title || "", "pl") : cards.indexOf(a) - cards.indexOf(b))
+      visible.forEach((card) => grid?.append(card))
+      if (count) count.textContent = String(visible.length)
+      if (empty) empty.hidden = visible.length > 0
+      const activeCount = selectedCategories.length + (priceValue === "all" ? 0 : 1)
+      root.querySelectorAll<HTMLElement>("[data-active-count]").forEach((el) => el.textContent = activeCount ? `(${activeCount})` : "")
+      if (updateUrl) { const url = new URL(location.href); url.search = ""; selectedCategories.forEach((id) => url.searchParams.append("category", id)); if (priceValue !== "all") url.searchParams.set("price", priceValue); if (sort?.value !== "default") url.searchParams.set("sort", sort?.value || ""); history.replaceState({}, "", url) }
+    }
+    const params = new URL(location.href).searchParams
+    params.getAll("category").forEach((id) => { const input = root.querySelector<HTMLInputElement>(`input[name="category"][value="${CSS.escape(id)}"]`); if (input) input.checked = true })
+    const price = params.get("price"); if (price) { const input = root.querySelector<HTMLInputElement>(`input[name="price"][value="${CSS.escape(price)}"]`); if (input) input.checked = true }
+    if (sort && params.get("sort")) sort.value = params.get("sort") || "default"
+    root.querySelectorAll("input,select").forEach((input) => input.addEventListener("change", () => apply()))
+    root.querySelectorAll<HTMLButtonElement>("[data-clear]").forEach((button) => button.addEventListener("click", () => { root.querySelectorAll<HTMLInputElement>('input[name="category"]').forEach((input) => input.checked = false); const all = root.querySelector<HTMLInputElement>('input[name="price"][value="all"]'); if (all) all.checked = true; if (sort) sort.value = "default"; apply(); filters?.classList.remove("open"); }))
+    toggle?.addEventListener("click", () => { const open = filters?.classList.toggle("open") || false; toggle.setAttribute("aria-expanded", String(open)) })
+    apply(false)
+  }
+  document.addEventListener("astro:page-load", setupCatalog)
+  setupCatalog()
+</script>
+
+<style>
+  .catalog { display: grid; grid-template-columns: 240px 1fr; gap: 48px; }
+  .filters { align-self: start; position: sticky; top: 110px; }
+  .filters-heading,.results-bar { display: flex; justify-content: space-between; align-items: center; }
+  .filters h2 { margin: 0; font: 400 1.8rem Georgia,serif; }
+  .filters button,.empty button { padding: 0; border: 0; color: #686b65; background: transparent; cursor: pointer; text-decoration: underline; font-size: .74rem; }
+  fieldset { margin: 26px 0 0; padding: 22px 0 0; border: 0; border-top: 1px solid #d5d0c5; }
+  legend { padding: 0 0 12px; font-size: .72rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  fieldset label { min-height: 36px; display: flex; align-items: center; gap: 10px; color: #5f625d; font-size: .82rem; cursor: pointer; }
+  input { width: 16px; height: 16px; accent-color: #35503a; }
+  .results-bar { min-height: 44px; margin-bottom: 24px; color: #6c6f69; font-size: .78rem; }
+  .results-bar p { margin: 0; }
+  .results-bar label { display: flex; align-items: center; gap: 10px; }
+  select { padding: 9px 30px 9px 10px; border: 1px solid #ccc6ba; color: #343731; background: transparent; }
+  .product-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 36px 22px; }
+  .product-card { color: inherit; text-decoration: none; }
+  .product-card[hidden] { display: none; }
+  .product-image-wrap { aspect-ratio: .82; overflow: hidden; background: #e7e2d8; }
+  .product-image { width: 100%; height: 100%; object-fit: cover; transition: transform 450ms ease; }
+  .product-card:hover .product-image { transform: scale(1.035); }
+  .image-placeholder { width: 100%; height: 100%; display: grid; place-items: center; color: rgba(53,80,58,.28); background: linear-gradient(145deg,#dfd9cb,#eeeae2); font: 6rem Georgia,serif; }
+  .product-info { display: flex; justify-content: space-between; gap: 12px; padding-top: 15px; }
+  .product-info p { margin: 0 0 5px; color: #858880; font-size: .62rem; letter-spacing: .1em; text-transform: uppercase; }
+  .product-info h3 { margin: 0; font: 400 1.08rem Georgia,serif; }
+  .product-info > span { flex: 0 0 auto; margin-top: 19px; color: #4f524d; font-size: .75rem; }
+  .empty { padding: 48px; border: 1px solid #d6d0c3; text-align: center; }
+  .empty button { display: block; margin: 12px auto 0; }
+  .filters-toggle { display: none; }
+  @media (max-width: 1000px) { .catalog { grid-template-columns: 210px 1fr; gap: 28px; } .product-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
+  @media (max-width: 700px) { .catalog { display: block; } .filters-toggle { width: 100%; min-height: 46px; display: block; margin-bottom: 18px; border: 1px solid #bdb7aa; color: #30332e; background: transparent; } .filters { display: none; position: static; margin-bottom: 26px; padding: 20px; border: 1px solid #d5d0c5; background: #ebe7de; } .filters.open { display: block; } .results-bar { align-items: flex-start; gap: 14px; } .results-bar label { flex-direction: column; align-items: flex-end; } .product-grid { gap: 30px 12px; } .product-info { display: block; } .product-info > span { display: block; margin-top: 7px; } }
+  @media (max-width: 430px) { .product-grid { grid-template-columns: 1fr; } }
+</style>

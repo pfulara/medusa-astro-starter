@@ -1,0 +1,271 @@
+---
+import Layout from "../../layouts/Layout.astro"
+import CartLink from "../../components/CartLink.astro"
+import AccountLink from "../../components/AccountLink.astro"
+import { Image } from "astro:assets"
+import { formatProductPrice, formatVariantPrice, getProductByHandle } from "../../lib/medusa"
+
+const product = await getProductByHandle(Astro.params.handle || "")
+if (!product) return new Response("Nie znaleziono produktu.", { status: 404 })
+const gallery = product.images?.length
+  ? product.images
+  : product.thumbnail
+    ? [{ id: "thumbnail", url: product.thumbnail }]
+    : []
+const variants = (product.variants || []).map((variant) => ({
+  id: variant.id,
+  sku: variant.sku || null,
+  price: formatVariantPrice(variant),
+  title: variant.title || "Wariant domyślny",
+  unitPrice: variant.calculated_price?.calculated_amount ?? variant.calculated_amount ?? variant.prices?.[0]?.amount ?? variant.amount ?? null,
+  currencyCode: variant.calculated_price?.currency_code ?? variant.currency_code ?? variant.prices?.[0]?.currency_code ?? null,
+  options: Object.fromEntries((variant.options || []).map((option) => [option.option_id, option.value])),
+}))
+const variantsJson = JSON.stringify(variants).replace(/</g, "\\u003c")
+---
+
+<Layout title={`${product.title} — Atelier`} description={product.description || product.title}>
+  <header class="product-header">
+    <a class="back-link" href="/" aria-label="Wróć do kolekcji"><span aria-hidden="true">←</span> Kolekcja</a>
+    <a class="brand" href="/">Atelier</a>
+    <div class="header-actions"><AccountLink /><CartLink /></div>
+  </header>
+
+  <main class="product-page">
+    <section class="gallery" aria-label={`Zdjęcia produktu ${product.title}`}>
+      {gallery.length ? gallery.map((image, index) => (
+        <figure class:list={["gallery-item", { "gallery-item-main": index === 0 }]}>
+          <Image
+            src={image.url}
+            alt={`${product.title}${index ? ` — zdjęcie ${index + 1}` : ""}`}
+            inferSize
+            widths={index === 0 ? [360, 600, 760, 1100, 1520] : [320, 480, 720, 900]}
+            sizes={index === 0
+              ? "(max-width: 600px) calc(100vw - 32px), (max-width: 900px) calc(100vw - 64px), min(56vw, 760px)"
+              : "(max-width: 600px) calc(100vw - 32px), (max-width: 900px) calc(50vw - 40px), min(28vw, 372px)"}
+            format="webp"
+            quality={80}
+            priority={index === 0}
+            loading={index === 0 ? "eager" : "lazy"}
+            class="gallery-image"
+            transition:name={index === 0 ? `product-image-${product.id}` : undefined}
+          />
+        </figure>
+      )) : (
+        <div class="gallery-placeholder" aria-hidden="true">{product.title.charAt(0)}</div>
+      )}
+    </section>
+
+    <section class="product-details" aria-labelledby="product-title" data-product-config>
+      <div class="details-inner">
+        <p class="eyebrow">{product.categories?.[0]?.name || "Kolekcja Atelier"}</p>
+        <h1 id="product-title">{product.title}</h1>
+        <p class="price">{formatProductPrice(product)}</p>
+        <p class="description">{product.description || "Przemyślany przedmiot o ponadczasowej formie, stworzony do codziennego użytkowania."}</p>
+
+        {product.options?.map((option) => (
+          <fieldset class="option">
+            <legend>{option.title}: <span data-selected-option={option.id}>—</span></legend>
+            <div class="option-values">
+              {option.values?.map((value) => (
+                <button
+                  class="option-value"
+                  type="button"
+                  data-option-id={option.id}
+                  data-option-value={value.value}
+                  aria-pressed="false"
+                >{value.value}</button>
+              ))}
+            </div>
+          </fieldset>
+        ))}
+
+        <button
+          class="add-button"
+          type="button"
+          data-add-to-cart
+          disabled={!variants.length}
+        >
+          Dodaj do koszyka <span aria-hidden="true">→</span>
+        </button>
+        <p class="cart-feedback" data-cart-feedback role="status" aria-live="polite"></p>
+
+        <dl class="product-meta">
+          <div><dt>Dostawa</dt><dd>2–4 dni robocze</dd></div>
+          <div><dt>Zwroty</dt><dd>30 dni na decyzję</dd></div>
+          <div><dt>Produkt</dt><dd data-product-sku>{product.variants?.[0]?.sku || product.id.slice(-8).toUpperCase()}</dd></div>
+        </dl>
+      </div>
+    </section>
+  </main>
+
+  <script type="application/json" id="product-variants" set:html={variantsJson}></script>
+
+  <script>
+    interface VariantOptionData {
+      id: string
+      sku: string | null
+      price: string
+      title: string
+      unitPrice: number | null
+      currencyCode: string | null
+      options: Record<string, string>
+    }
+
+    function setupVariantSelector() {
+      const root = document.querySelector<HTMLElement>("[data-product-config]")
+      const dataElement = document.querySelector<HTMLScriptElement>("#product-variants")
+      if (!root || !dataElement || root.dataset.variantSelectorReady === "true") return
+
+      root.dataset.variantSelectorReady = "true"
+      const variants = JSON.parse(dataElement.textContent || "[]") as VariantOptionData[]
+      const buttons = [...root.querySelectorAll<HTMLButtonElement>("[data-option-id]")]
+      const price = root.querySelector<HTMLElement>(".price")
+      const sku = root.querySelector<HTMLElement>("[data-product-sku]")
+      const addButton = root.querySelector<HTMLButtonElement>("[data-add-to-cart]")
+      const cartFeedback = root.querySelector<HTMLElement>("[data-cart-feedback]")
+      const selectedOptions = new Map<string, string>()
+      let selectedVariant: VariantOptionData | null = null
+
+      const applyVariant = (variant: VariantOptionData, updateUrl = true) => {
+        selectedVariant = variant
+        selectedOptions.clear()
+        Object.entries(variant.options).forEach(([optionId, value]) => selectedOptions.set(optionId, value))
+
+        buttons.forEach((button) => {
+          const active = selectedOptions.get(button.dataset.optionId || "") === button.dataset.optionValue
+          button.classList.toggle("active", active)
+          button.setAttribute("aria-pressed", String(active))
+        })
+
+        selectedOptions.forEach((value, optionId) => {
+          const label = root.querySelector<HTMLElement>(`[data-selected-option="${CSS.escape(optionId)}"]`)
+          if (label) label.textContent = value
+        })
+
+        if (price) price.textContent = variant.price
+        if (sku) sku.textContent = variant.sku || variant.id.slice(-8).toUpperCase()
+        if (addButton) {
+          addButton.disabled = false
+          addButton.dataset.variantId = variant.id
+        }
+
+        if (updateUrl) {
+          const url = new URL(window.location.href)
+          url.searchParams.set("variant", variant.id)
+          window.history.replaceState({}, "", url)
+        }
+      }
+
+      const updateAvailability = () => {
+        buttons.forEach((button) => {
+          const optionId = button.dataset.optionId || ""
+          const optionValue = button.dataset.optionValue || ""
+          const available = variants.some((variant) => Object.entries(selectedOptions).every(([selectedId, selectedValue]) =>
+            selectedId === optionId || variant.options[selectedId] === selectedValue
+          ) && variant.options[optionId] === optionValue)
+          button.disabled = !available
+        })
+      }
+
+      buttons.forEach((button) => {
+        button.addEventListener("click", () => {
+          const optionId = button.dataset.optionId
+          const optionValue = button.dataset.optionValue
+          if (!optionId || !optionValue) return
+
+          selectedOptions.set(optionId, optionValue)
+          const exactVariant = variants.find((variant) =>
+            Object.entries(variant.options).every(([id, value]) => selectedOptions.get(id) === value)
+          )
+          const compatibleVariant = exactVariant || variants.find((variant) => variant.options[optionId] === optionValue)
+
+          if (compatibleVariant) {
+            applyVariant(compatibleVariant)
+            updateAvailability()
+          }
+        })
+      })
+
+      addButton?.addEventListener("click", async () => {
+        if (!selectedVariant) return
+        const originalText = addButton.innerHTML
+        addButton.disabled = true
+        addButton.textContent = "Dodawanie…"
+        if (cartFeedback) {
+          cartFeedback.textContent = ""
+          cartFeedback.classList.remove("is-error")
+        }
+
+        try {
+          const { addCartItem } = await import("../../lib/cart")
+          await addCartItem(selectedVariant.id, 1)
+          addButton.textContent = "Dodano do koszyka"
+          if (cartFeedback) cartFeedback.textContent = "Produkt został dodany do koszyka."
+        } catch (error) {
+          addButton.textContent = "Spróbuj ponownie"
+          if (cartFeedback) {
+            cartFeedback.textContent = error instanceof Error
+              ? error.message
+              : "Nie udało się dodać produktu do koszyka."
+            cartFeedback.classList.add("is-error")
+          }
+        } finally {
+          window.setTimeout(() => {
+            addButton.innerHTML = originalText
+            addButton.disabled = false
+          }, 1400)
+        }
+      })
+
+      const requestedVariantId = new URL(window.location.href).searchParams.get("variant")
+      const initialVariant = variants.find((variant) => variant.id === requestedVariantId) || variants[0]
+      if (initialVariant) {
+        applyVariant(initialVariant, requestedVariantId !== initialVariant.id)
+        updateAvailability()
+      }
+    }
+
+    document.addEventListener("astro:page-load", setupVariantSelector)
+    setupVariantSelector()
+  </script>
+</Layout>
+
+<style>
+  .product-header { width: min(1400px, calc(100% - 64px)); min-height: 82px; margin-inline: auto; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; border-bottom: 1px solid rgba(32, 34, 31, 0.13); }
+  .back-link, .brand { color: #20221f; text-decoration: none; }
+  .back-link { font-size: 0.78rem; font-weight: 700; }
+  .back-link span { margin-right: 8px; }
+  .brand { font-family: Georgia, "Times New Roman", serif; font-size: 1.35rem; font-weight: 700; }
+  .header-actions { justify-self: end; display: flex; align-items: center; }
+  .product-page { width: min(1400px, calc(100% - 64px)); margin: 0 auto 100px; display: grid; grid-template-columns: 1.12fr 0.88fr; gap: 64px; padding-top: 48px; }
+  .gallery { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+  .gallery-item { min-height: 300px; margin: 0; overflow: hidden; background: #e5e0d6; }
+  .gallery-item-main { grid-column: 1 / -1; min-height: 670px; }
+  :global(.gallery-image) { width: 100%; height: 100%; object-fit: cover; }
+  .gallery-placeholder { grid-column: 1 / -1; min-height: 670px; display: grid; place-items: center; color: rgba(53,80,58,.25); background: linear-gradient(145deg,#dfd9cb,#eeeae2); font: 12rem Georgia,serif; }
+  .product-details { position: relative; }
+  .details-inner { position: sticky; top: 48px; padding: 48px 7%; }
+  .eyebrow { margin: 0 0 22px; color: #777a73; font-size: .68rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+  h1 { max-width: 620px; margin: 0; font: 400 clamp(3.4rem,6vw,6.2rem)/.94 Georgia,"Times New Roman",serif; letter-spacing: -.055em; }
+  .price { margin: 26px 0; font-family: Georgia,"Times New Roman",serif; font-size: 1.4rem; }
+  .description { max-width: 540px; margin: 0 0 38px; color: #62655f; line-height: 1.75; }
+  .option { margin: 0 0 26px; padding: 0; border: 0; }
+  .option legend { margin-bottom: 12px; font-size: .7rem; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .option-values { display: flex; flex-wrap: wrap; gap: 8px; }
+  .option-value { min-width: 48px; padding: 10px 14px; border: 1px solid #cbc6ba; color: #333630; background: transparent; cursor: pointer; transition: color 180ms ease, background 180ms ease, border-color 180ms ease, transform 140ms ease; }
+  .option-value:active { transform: scale(.94); }
+  .option-value.active { border-color: #35503a; color: #fff; background: #35503a; }
+  .option-value:disabled { opacity: .32; cursor: not-allowed; text-decoration: line-through; }
+  .add-button { width: 100%; display: flex; justify-content: space-between; padding: 18px 20px; border: 0; color: #fff; background: #35503a; cursor: pointer; font-weight: 700; }
+  .add-button:hover { background: #263e2b; }
+  .add-button:disabled { opacity: .45; cursor: not-allowed; }
+  .cart-feedback { min-height: 1.2em; margin: 10px 0 0; color: #35503a; font-size: .72rem; }
+  .cart-feedback.is-error { color: #934a3d; }
+  .product-meta { margin: 34px 0 0; border-top: 1px solid #d6d1c7; }
+  .product-meta div { display: flex; justify-content: space-between; padding: 15px 0; border-bottom: 1px solid #d6d1c7; font-size: .74rem; }
+  .product-meta dt { font-weight: 700; }
+  .product-meta dd { margin: 0; color: #767972; }
+  @media (max-width: 900px) { .product-page { grid-template-columns: 1fr; } .details-inner { position: static; padding-inline: 0; } .gallery-item-main, .gallery-placeholder { min-height: 70vw; } }
+  @media (max-width: 600px) { .product-header, .product-page { width: calc(100% - 32px); } .product-header { grid-template-columns: 1fr auto 1fr; } .product-page { gap: 24px; padding-top: 16px; } .gallery { grid-template-columns: 1fr; } .gallery-item, .gallery-item-main, .gallery-placeholder { grid-column: 1; min-height: 105vw; } .details-inner { padding-top: 20px; } }
+</style>

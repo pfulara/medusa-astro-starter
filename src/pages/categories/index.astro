@@ -1,0 +1,29 @@
+---
+import Layout from "../../layouts/Layout.astro"
+import SiteHeader from "../../components/SiteHeader.astro"
+import ProductListing from "../../components/ProductListing.astro"
+import { getStorefrontData, type Product, type ProductCategory } from "../../lib/medusa"
+
+let categories: ProductCategory[] = []
+let products: Product[] = []
+let loadError = ""
+try { ({ categories, products } = await getStorefrontData()) } catch (error) { loadError = error instanceof Error ? error.message : "Nie udało się pobrać produktów." }
+---
+
+<Layout title="Wszystkie produkty — Atelier" description="Zobacz wszystkie produkty dostępne w Atelier.">
+  <SiteHeader categories={categories} activeHandle="all" />
+  <main class="listing-page">
+    <header class="page-heading"><p>Kolekcja Atelier</p><h1>Wszystkie produkty</h1><span>Przedmioty wybrane z myślą o codziennym życiu.</span></header>
+    {loadError ? <div class="message" role="alert"><strong>Nie udało się połączyć ze sklepem.</strong><span>{loadError}</span></div> : <ProductListing products={products} categories={categories} />}
+  </main>
+</Layout>
+
+<style>
+  .listing-page { width: min(1400px,calc(100% - 64px)); margin: 0 auto; padding: 70px 0 120px; }
+  .page-heading { margin-bottom: 60px; }
+  .page-heading p { margin: 0 0 16px; color: #73776f; font-size: .68rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+  h1 { margin: 0 0 18px; font: 400 clamp(3.5rem,7vw,7rem)/.95 Georgia,"Times New Roman",serif; letter-spacing: -.055em; }
+  .page-heading span { color: #686b65; line-height: 1.7; }
+  .message { display: flex; flex-direction: column; gap: 8px; padding: 28px; border: 1px solid #d6d0c3; background: #ebe7de; }
+  @media (max-width: 760px) { .listing-page { width: calc(100% - 32px); padding-top: 50px; } .page-heading { margin-bottom: 40px; } }
+</style>

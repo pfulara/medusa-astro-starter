@@ -1,0 +1,29 @@
+---
+import Layout from "../../layouts/Layout.astro"
+import SiteHeader from "../../components/SiteHeader.astro"
+import ProductListing from "../../components/ProductListing.astro"
+import { getStorefrontData } from "../../lib/medusa"
+
+const data = await getStorefrontData()
+const category = data.categories.find((item) => item.handle === Astro.params.handle)
+if (!category) return new Response("Nie znaleziono kategorii.", { status: 404 })
+const categories = data.categories
+const products = data.products.filter((product) => product.categories?.some((item) => item.id === category.id))
+---
+
+<Layout title={`${category.name} — Atelier`} description={`Produkty w kategorii ${category.name}.`}>
+  <SiteHeader categories={categories} activeHandle={category.handle} />
+  <main class="listing-page">
+    <header class="page-heading"><p>Kategoria</p><h1>{category.name}</h1><span>Odkryj produkty z kategorii {category.name.toLocaleLowerCase("pl")}.</span></header>
+    <ProductListing products={products} categories={categories} fixedCategoryId={category.id} />
+  </main>
+</Layout>
+
+<style>
+  .listing-page { width: min(1400px,calc(100% - 64px)); margin: 0 auto; padding: 70px 0 120px; }
+  .page-heading { margin-bottom: 60px; }
+  .page-heading p { margin: 0 0 16px; color: #73776f; font-size: .68rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+  h1 { margin: 0 0 18px; font: 400 clamp(3.5rem,7vw,7rem)/.95 Georgia,"Times New Roman",serif; letter-spacing: -.055em; }
+  .page-heading span { color: #686b65; line-height: 1.7; }
+  @media (max-width: 760px) { .listing-page { width: calc(100% - 32px); padding-top: 50px; } .page-heading { margin-bottom: 40px; } }
+</style>

@@ -1,0 +1,96 @@
+---
+import Layout from "../../layouts/Layout.astro"
+import SiteHeader from "../../components/SiteHeader.astro"
+import AccountTabs from "../../components/AccountTabs.astro"
+import type { HttpTypes } from "@medusajs/types"
+import { formatOrderPrice, getOrderStatus, listCustomerOrders, retrieveCustomer } from "../../lib/auth"
+import { getStorefrontData, type ProductCategory } from "../../lib/medusa"
+
+const token = await Astro.session?.get("customerToken")
+if (!token) return Astro.redirect("/account/login?next=/account")
+
+let customer: HttpTypes.StoreCustomer
+let orders: HttpTypes.StoreOrder[]
+let count = 0
+try {
+  const result = await Promise.all([retrieveCustomer(token), listCustomerOrders(token, 20)])
+  customer = result[0]
+  orders = result[1].orders
+  count = result[1].count
+} catch {
+  Astro.session?.destroy()
+  return Astro.redirect("/account/login?error=expired&next=/account")
+}
+
+let categories: ProductCategory[] = []
+try { categories = (await getStorefrontData(1)).categories } catch {}
+const firstName = customer.first_name || customer.email.split("@")[0]
+---
+
+<Layout title="Twoje konto — Atelier" description="Historia i statusy Twoich zamówień w Atelier.">
+  <SiteHeader categories={categories} />
+  <main class="account-page">
+    <header class="account-heading">
+      <div><p class="eyebrow">Panel klienta</p><h1>Dzień dobry, {firstName}.</h1><p>Zarządzaj zakupami i danymi, których używasz podczas składania zamówienia.</p></div>
+      <form method="post" action="/api/auth/logout"><button type="submit">Wyloguj się</button></form>
+    </header>
+
+    <section class="account-grid" aria-label="Podsumowanie konta">
+      <article><span>Zamówienia</span><strong>{count}</strong></article>
+      <article><span>Zapisane adresy</span><strong>{customer.addresses?.length || 0}</strong></article>
+      <article><span>Adres e-mail</span><strong>{customer.email}</strong></article>
+    </section>
+
+    <AccountTabs active="orders" />
+
+    <section class="orders" aria-labelledby="orders-title">
+      <div class="section-heading"><div><p class="eyebrow">Historia zakupów</p><h2 id="orders-title">Twoje zamówienia</h2></div><span>{count} {count === 1 ? "zamówienie" : "zamówień"}</span></div>
+      {orders.length ? (
+        <div class="order-list">
+          {orders.map((order) => {
+            const status = getOrderStatus(order)
+            return <a class="order-card" href={`/account/orders/${order.id}`}>
+              <div class="order-main"><span class="order-number">Zamówienie #{order.display_id}</span><strong>{new Intl.DateTimeFormat("pl-PL", { dateStyle: "long" }).format(new Date(order.created_at))}</strong></div>
+              <span class:list={["status", `is-${status.tone}`]}>{status.label}</span>
+              <span class="items">{order.items?.length || 0} {(order.items?.length || 0) === 1 ? "produkt" : "produkty"}</span>
+              <strong class="total">{formatOrderPrice(order.total, order.currency_code)}</strong>
+              <span class="arrow" aria-hidden="true">→</span>
+            </a>
+          })}
+        </div>
+      ) : (
+        <div class="empty"><h3>Nie masz jeszcze zamówień.</h3><p>Gdy zrobisz pierwszy zakup, jego status pojawi się właśnie tutaj.</p><a href="/#products">Poznaj kolekcję <span aria-hidden="true">→</span></a></div>
+      )}
+    </section>
+  </main>
+</Layout>
+
+<style>
+  .account-page { width: min(1200px,calc(100% - 64px)); margin: auto; padding: 74px 0 120px; }
+  .account-heading { display: flex; justify-content: space-between; align-items: end; gap: 30px; padding-bottom: 55px; border-bottom: 1px solid #d6d1c7; }
+  .eyebrow { margin: 0 0 15px; color: #73776f; font-size: .68rem; font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+  h1,h2,h3 { font-family: Georgia,"Times New Roman",serif; font-weight: 400; letter-spacing: -.045em; }
+  h1 { margin: 0; font-size: clamp(3.2rem,7vw,6.4rem); line-height: .95; }
+  .account-heading p:last-child { max-width: 600px; margin: 22px 0 0; color: #686b65; line-height: 1.7; }
+  .account-heading button { min-height: 44px; padding: 0 18px; border: 1px solid #9b9a94; color: #30322f; background: transparent; cursor: pointer; }
+  .account-heading button:hover { border-color: #35503a; color: #35503a; }
+  .account-grid { display: grid; grid-template-columns: 180px 180px 1fr; gap: 1px; margin: 28px 0 90px; background: #d6d1c7; border: 1px solid #d6d1c7; }
+  .account-grid article { min-height: 110px; display: flex; flex-direction: column; justify-content: space-between; padding: 20px; background: #ebe7de; }
+  .account-grid span { color: #73776f; font-size: .72rem; text-transform: uppercase; letter-spacing: .1em; }
+  .account-grid strong { overflow-wrap: anywhere; font: 400 1.25rem Georgia,"Times New Roman",serif; }
+  .section-heading { display: flex; justify-content: space-between; align-items: end; margin-bottom: 30px; }
+  h2 { margin: 0; font-size: clamp(2.6rem,5vw,4.3rem); }
+  .section-heading > span { color: #73776f; font-size: .8rem; }
+  .order-list { border-top: 1px solid #cfc9bd; }
+  .order-card { min-height: 110px; display: grid; grid-template-columns: minmax(210px,1.6fr) minmax(145px,1fr) minmax(90px,.7fr) minmax(110px,.7fr) 28px; gap: 20px; align-items: center; padding: 22px 14px; border-bottom: 1px solid #cfc9bd; color: inherit; text-decoration: none; transition: background 180ms ease; }
+  .order-card:hover { background: #ebe7de; }
+  .order-main { display: grid; gap: 9px; }
+  .order-number { color: #73776f; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; }
+  .order-main strong,.total { font-family: Georgia,"Times New Roman",serif; font-weight: 400; }
+  .status { width: max-content; padding: 7px 10px; border-radius: 99px; font-size: .7rem; font-weight: 700; }
+  .is-success { color: #2d6238; background: #dce9dc; }.is-progress { color: #365c70; background: #dce8ed; }.is-pending { color: #765c2d; background: #eee5ce; }.is-muted { color: #6b625e; background: #e5dfdc; }
+  .items { color: #73776f; font-size: .8rem; }.arrow { font-size: 1.25rem; }
+  .empty { padding: 70px 24px; text-align: center; background: #ebe7de; }
+  .empty h3 { margin: 0; font-size: 2.3rem; }.empty p { color: #686b65; }.empty a { display: inline-flex; gap: 30px; margin-top: 16px; padding: 14px 18px; color: #fff; background: #35503a; text-decoration: none; font-weight: 700; font-size: .78rem; }
+  @media (max-width:800px) { .account-page { width: calc(100% - 32px); padding-top: 48px; }.account-heading { align-items: start; flex-direction: column; }.account-grid { grid-template-columns: 1fr; margin-bottom: 65px; }.order-card { grid-template-columns: 1fr auto; }.status { grid-column: 2; grid-row: 1; }.items { grid-column: 1; }.total { grid-column: 2; }.arrow { display:none; } }
+</style>

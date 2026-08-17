@@ -1,0 +1,44 @@
+---
+import CartLink from "./CartLink.astro"
+import AccountLink from "./AccountLink.astro"
+import type { ProductCategory } from "../lib/medusa"
+
+interface Props {
+  categories: ProductCategory[]
+  activeHandle?: string
+}
+
+const { categories, activeHandle } = Astro.props
+---
+
+<header class="site-header">
+  <div class="nav-shell">
+    <a class="brand" href="/" aria-label="Atelier — strona główna">
+      <span class="brand-mark">A</span><span>Atelier</span>
+    </a>
+    <nav class="category-menu" aria-label="Kategorie produktów">
+      <a class:list={["category-link", { "is-active": activeHandle === "all" }]} href="/categories">Wszystkie</a>
+      {categories.map((category) => (
+        <a class:list={["category-link", { "is-active": activeHandle === category.handle }]} href={`/categories/${category.handle}`}>{category.name}</a>
+      ))}
+    </nav>
+    <div class="nav-actions">
+      <AccountLink />
+      <CartLink />
+    </div>
+  </div>
+</header>
+
+<style>
+  .site-header { position: sticky; top: 0; z-index: 20; border-bottom: 1px solid rgba(32,34,31,.13); background: rgba(245,243,238,.9); backdrop-filter: blur(18px); }
+  .nav-shell { width: min(1400px,calc(100% - 64px)); min-height: 82px; margin-inline: auto; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 48px; }
+  .brand { display: inline-flex; align-items: center; gap: 11px; color: inherit; font-family: Georgia,"Times New Roman",serif; font-size: 1.3rem; font-weight: 700; letter-spacing: -.03em; text-decoration: none; }
+  .brand-mark { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 50%; color: #f5f3ee; background: #35503a; font-size: .9rem; }
+  .category-menu { display: flex; justify-content: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .category-menu::-webkit-scrollbar { display: none; }
+  .category-link { flex: 0 0 auto; padding: 9px 13px; border-radius: 99px; color: #686b65; text-decoration: none; font-size: .82rem; transition: color 180ms ease,background 180ms ease; }
+  .category-link:hover,.category-link.is-active { color: #fff; background: #35503a; }
+  .nav-actions { display: flex; align-items: center; }
+  @media (max-width: 1050px) { .nav-shell { gap: 18px; } .category-menu { justify-content: start; } }
+  @media (max-width: 760px) { .nav-shell { width: min(100% - 32px,1400px); min-height: 70px; grid-template-columns: 1fr auto; } .category-menu { grid-column: 1/-1; order: 3; width: calc(100vw - 16px); margin-left: -8px; padding: 0 8px 10px; } .nav-actions { justify-self: end; } }
+</style>

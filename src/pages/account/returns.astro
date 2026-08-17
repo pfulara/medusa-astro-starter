@@ -1,0 +1,92 @@
+---
+import type { HttpTypes } from "@medusajs/types"
+import Layout from "../../layouts/Layout.astro"
+import SiteHeader from "../../components/SiteHeader.astro"
+import AccountTabs from "../../components/AccountTabs.astro"
+import { formatOrderPrice, listCustomerOrders, listReturnReasons, listReturnShippingOptions, retrieveCustomer, type ReturnReason, type ReturnShippingOption } from "../../lib/auth"
+import { getStorefrontData, type ProductCategory } from "../../lib/medusa"
+
+type CustomerReturn = { id: string; display_id?: number; status: string; refund_amount?: number; created_at?: string; received_at?: string; canceled_at?: string; items?: Array<{ id: string; quantity: number; item_id?: string }> }
+type ReturnableOrder = HttpTypes.StoreOrder & { refunded_total?: number; cart?: { id: string } | null; returns?: CustomerReturn[] }
+type CustomerReturnWithOrder = CustomerReturn & { order: ReturnableOrder }
+
+const token = await Astro.session?.get("customerToken")
+if (!token) return Astro.redirect("/account/login?next=/account/returns")
+
+let customer: HttpTypes.StoreCustomer
+let orders: ReturnableOrder[] = []
+let count = 0
+let reasons: ReturnReason[] = []
+try {
+  const [customerResult, ordersResult, reasonsResult] = await Promise.all([
+    retrieveCustomer(token), listCustomerOrders(token, 50), listReturnReasons(token),
+  ])
+  customer = customerResult
+  orders = ordersResult.orders as ReturnableOrder[]
+  count = ordersResult.count
+  reasons = reasonsResult.return_reasons
+} catch {
+  Astro.session?.destroy()
+  return Astro.redirect("/account/login?error=expired&next=/account/returns")
+}
+
+const optionsByOrder = new Map<string, ReturnShippingOption[]>()
+await Promise.all(orders.map(async (order) => {
+  if (!order.cart?.id) return
+  try { optionsByOrder.set(order.id, (await listReturnShippingOptions(token, order.cart.id)).shipping_options) } catch {}
+}))
+
+let categories: ProductCategory[] = []
+try { categories = (await getStorefrontData(1)).categories } catch {}
+
+const eligibleOrders = orders.filter((order) => order.status !== "canceled" && order.items?.some((item) => {
+  return item.quantity - (item.detail?.return_requested_quantity || 0) > 0
+}))
+const returns = orders.flatMap((order) => (order.returns || []).map((entry) => ({ ...entry, order })))
+const refundedOrders = orders.filter((order) => (order.refunded_total || 0) > 0)
+const statusLabel = (status: string) => ({ requested: "Zgłoszony", open: "Otwarty", received: "Odebrany", partially_received: "Częściowo odebrany", canceled: "Anulowany" }[status] || status)
+const refundStatus = (entry: CustomerReturnWithOrder) => {
+  if (entry.status === "canceled") return { label: "Refund nieprzysługujący", tone: "muted" }
+  if ((entry.order?.refunded_total || 0) > 0) return { label: "Refund wykonany dla zamówienia", tone: "success" }
+  if (entry.status === "received" || entry.status === "partially_received") return { label: "Oczekuje na refund", tone: "pending" }
+  return { label: "Oczekuje na przyjęcie zwrotu", tone: "pending" }
+}
+const errorMessages: Record<string, string> = { validation: "Wybierz produkty, poprawne ilości i powody zwrotu.", order: "Nie można zwrócić produktów z tego zamówienia.", shipping: "Dla tego zamówienia nie skonfigurowano sposobu odesłania.", request: "Nie udało się utworzyć zwrotu. Sprawdź dane lub spróbuj ponownie." }
+const error = errorMessages[Astro.url.searchParams.get("error") || ""]
+const successId = Astro.url.searchParams.get("success")
+---
+
+<Layout title="Zwroty — Atelier" description="Zgłoszenia zwrotów w Twoim koncie Atelier.">
+  <SiteHeader categories={categories} />
+  <main class="account-page">
+    <header class="account-heading"><div><p class="eyebrow">Panel klienta</p><h1>Zwroty</h1><p>Wybierz zamówienie i produkty, które chcesz odesłać.</p></div><form method="post" action="/api/auth/logout"><button type="submit">Wyloguj się</button></form></header>
+    <section class="account-grid" aria-label="Podsumowanie konta"><article><span>Zamówienia</span><strong>{count}</strong></article><article><span>Zapisane adresy</span><strong>{customer.addresses?.length || 0}</strong></article><article><span>Adres e-mail</span><strong>{customer.email}</strong></article></section>
+    <AccountTabs active="returns" />
+    {successId && <p class="notice is-success" role="status">Zwrot został zgłoszony. Numer zgłoszenia: <strong>{successId}</strong></p>}
+    {error && <p class="notice is-error" role="alert">{error}</p>}
+
+    {returns.length > 0 && <section class="return-history" aria-labelledby="history-title"><div class="section-heading"><div><p class="eyebrow">Historia</p><h2 id="history-title">Twoje zwroty i refundy</h2></div><span>{returns.length}</span></div><div class="history-list">{returns.map((entry) => {
+      const financialStatus = refundStatus(entry)
+      return <article class="history-card"><div class="history-main"><span>Zwrot {entry.display_id ? `#${entry.display_id}` : entry.id}</span><h3>Zamówienie #{entry.order.display_id}</h3>{entry.created_at && <p>Zgłoszony {new Intl.DateTimeFormat("pl-PL", { dateStyle:"long" }).format(new Date(entry.created_at))}</p>}</div><div class="return-state"><small>Status zwrotu</small><strong>{statusLabel(entry.status)}</strong></div><div class="refund-state"><small>Status pieniędzy</small><strong class:list={[`is-${financialStatus.tone}`]}>{financialStatus.label}</strong>{typeof entry.refund_amount === "number" && <span>Przewidywana kwota: {formatOrderPrice(entry.refund_amount, entry.order.currency_code)}</span>}</div></article>
+    })}</div><p class="refund-note">Refund jest wykonywany przez obsługę sklepu po weryfikacji zwróconych produktów. Bank lub operator płatności może potrzebować kilku dni na zaksięgowanie środków.</p></section>}
+
+    {refundedOrders.length > 0 && <section class="refunds" aria-labelledby="refunds-title"><div class="section-heading"><div><p class="eyebrow">Operacje finansowe</p><h2 id="refunds-title">Wykonane refundy</h2></div></div><div class="refund-list">{refundedOrders.map((order) => <article><div><span>Zamówienie #{order.display_id}</span><small>{order.payment_status === "partially_refunded" ? "Refund częściowy" : "Refund"}</small></div><strong>{formatOrderPrice(order.refunded_total, order.currency_code)}</strong></article>)}</div><p class="refund-note">Kwoty powyżej są sumą refundów zapisanych dla całego zamówienia. Medusa nie przypisuje standardowo pojedynczej operacji płatniczej bezpośrednio do konkretnego zgłoszenia zwrotu.</p></section>}
+
+    <section class="new-return" aria-labelledby="new-return-title"><div class="section-heading"><div><p class="eyebrow">Nowe zgłoszenie</p><h2 id="new-return-title">Zwróć produkty</h2></div></div>
+      {eligibleOrders.length && reasons.length ? <div class="return-orders">{eligibleOrders.map((order) => {
+        const options = optionsByOrder.get(order.id) || []
+        return <details class="return-order"><summary><div><span>Zamówienie #{order.display_id}</span><strong>{new Intl.DateTimeFormat("pl-PL", { dateStyle:"long" }).format(new Date(order.created_at))}</strong></div><b>{formatOrderPrice(order.total, order.currency_code)}</b></summary>
+          {options.length ? <form method="post" action="/api/account/returns"><input type="hidden" name="order_id" value={order.id} /><div class="return-items">{order.items?.map((item) => {
+            const available = Math.max(0, item.quantity - (item.detail?.return_requested_quantity || 0))
+            if (!available) return null
+            return <article class="return-item"><label class="item-check"><input type="checkbox" name="item_id" value={item.id} /><span>{item.thumbnail ? <img src={item.thumbnail} alt="" loading="lazy" /> : <i aria-hidden="true">{(item.product_title || item.title).charAt(0)}</i>}</span><strong>{item.product_title || item.title}<small>{item.variant_title && item.variant_title !== "Default" ? item.variant_title : "Wariant podstawowy"}</small></strong></label><label>Ilość<select name={`quantity_${item.id}`}>{Array.from({ length:available }, (_, index) => <option value={index + 1}>{index + 1}</option>)}</select></label><label>Powód<select name={`reason_${item.id}`}><option value="">Wybierz</option>{reasons.map((reason) => <option value={reason.id}>{reason.label}</option>)}</select></label><label class="item-note">Dodatkowa informacja<input name={`note_${item.id}`} maxlength="200" /></label></article>
+          })}</div><label class="shipping">Sposób odesłania<select name="return_shipping_option_id" required>{options.map((option) => <option value={option.id}>{option.name}</option>)}</select></label><label class="general-note">Uwagi do całego zgłoszenia<textarea name="note" rows="3" maxlength="500"></textarea></label><button class="submit-return" type="submit">Zgłoś zwrot <span aria-hidden="true">→</span></button></form> : <p class="option-warning">Dla tego zamówienia nie ma skonfigurowanej metody odesłania. Skontaktuj się z obsługą sklepu.</p>}
+        </details>
+      })}</div> : <div class="empty"><h3>Brak produktów możliwych do zwrotu.</h3><p>Gdy zamówienie będzie kwalifikowało się do zwrotu, pojawi się tutaj.</p></div>}
+    </section>
+  </main>
+</Layout>
+
+<style>
+  .account-page{width:min(1200px,calc(100% - 64px));margin:auto;padding:74px 0 120px}.account-heading{display:flex;justify-content:space-between;align-items:end;gap:30px;padding-bottom:55px}.eyebrow{margin:0 0 15px;color:#73776f;font-size:.68rem;font-weight:700;letter-spacing:.18em;text-transform:uppercase}h1,h2,h3{font-family:Georgia,"Times New Roman",serif;font-weight:400;letter-spacing:-.045em}h1{margin:0;font-size:clamp(3.2rem,7vw,6.4rem);line-height:.95}.account-heading p:last-child{margin:22px 0 0;color:#686b65}.account-heading button{min-height:44px;padding:0 18px;border:1px solid #9b9a94;background:transparent;cursor:pointer}.account-grid{display:grid;grid-template-columns:180px 180px 1fr;gap:1px;margin:28px 0 90px;background:#d6d1c7;border:1px solid #d6d1c7}.account-grid article{min-height:110px;display:flex;flex-direction:column;justify-content:space-between;padding:20px;background:#ebe7de}.account-grid span{color:#73776f;font-size:.72rem;text-transform:uppercase;letter-spacing:.1em}.account-grid strong{overflow-wrap:anywhere;font:400 1.25rem Georgia,serif}.notice{margin:0 0 28px;padding:15px 18px;border:1px solid;font-size:.84rem}.is-success{color:#2d6238;border-color:#aec6b1;background:#e4eee4}.is-error{color:#744338;border-color:#d0aaa1;background:#f0e3df}.section-heading{display:flex;justify-content:space-between;align-items:end;margin-bottom:30px}h2{margin:0;font-size:clamp(2.5rem,5vw,4.2rem)}.section-heading>span{color:#73776f}.return-history,.refunds{margin-bottom:80px}.history-list{border-top:1px solid #cfc9bd}.history-card{display:grid!important;grid-template-columns:minmax(220px,1fr) minmax(150px,.6fr) minmax(230px,1fr);gap:30px;align-items:center;padding:22px 14px!important;border-bottom:1px solid #cfc9bd}.history-main>span,.refund-list span{color:#73776f;font-size:.68rem;text-transform:uppercase}.history-main h3{margin:7px 0 0;font-size:1.35rem}.history-main p{margin:7px 0 0;color:#73776f;font-size:.74rem}.return-state,.refund-state{display:grid;gap:7px}.return-state small,.refund-state small{color:#73776f;font-size:.65rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.return-state strong,.refund-state strong{width:max-content;padding:7px 10px;color:#365c70;background:#dce8ed;font-size:.7rem}.refund-state strong.is-success{color:#2d6238;background:#dce9dc}.refund-state strong.is-pending{color:#765c2d;background:#eee5ce}.refund-state strong.is-muted{color:#6b625e;background:#e5dfdc}.refund-state span{color:#5f625d;font-size:.76rem;text-transform:none}.refund-list{border-top:1px solid #cfc9bd}.refund-list article{display:flex;justify-content:space-between;align-items:center;padding:20px 14px;border-bottom:1px solid #cfc9bd}.refund-list small{display:block;margin-top:7px;color:#73776f}.refund-list strong{font:400 1.2rem Georgia,serif}.refund-note{max-width:760px;margin:22px 0 0;color:#686b65;font-size:.78rem;line-height:1.65}.return-order{border-top:1px solid #cfc9bd}.return-order:last-child{border-bottom:1px solid #cfc9bd}.return-order summary{min-height:92px;display:flex;justify-content:space-between;align-items:center;gap:20px;padding:18px 14px;cursor:pointer;list-style:none}.return-order summary::-webkit-details-marker{display:none}.return-order summary span{display:block;margin-bottom:8px;color:#73776f;font-size:.68rem;text-transform:uppercase}.return-order summary strong,.return-order summary b{font:400 1rem Georgia,serif}.return-order[open]{padding-bottom:28px;background:#ebe7de}.return-items{border-top:1px solid #d0cabf}.return-item{display:grid;grid-template-columns:minmax(250px,1.5fr) 90px 180px minmax(180px,1fr);gap:16px;align-items:end;padding:18px}.return-item label,.shipping,.general-note{display:grid;gap:7px;color:#5f625d;font-size:.7rem;font-weight:700}.item-check{grid-template-columns:20px 56px 1fr;align-items:center!important}.item-check input{width:18px;height:18px;accent-color:#35503a}.item-check span{width:56px;height:56px;display:grid;place-items:center;background:#dfd9ce}.item-check img{width:100%;height:100%;object-fit:cover}.item-check i{font:400 1.7rem Georgia,serif}.item-check strong{font:400 1rem Georgia,serif}.item-check small{display:block;margin-top:5px;color:#73776f;font:400 .7rem Inter,sans-serif}select,input,textarea{width:100%;min-height:44px;padding:0 11px;border:1px solid #bbb6ab;border-radius:0;background:#f8f6f1;font:400 .82rem Inter,sans-serif}textarea{padding:11px;resize:vertical}.shipping,.general-note{max-width:500px;margin:20px 18px}.submit-return{min-height:46px;margin:0 18px;padding:0 18px;border:0;color:#fff;background:#35503a;cursor:pointer;font-weight:700}.option-warning{margin:0 18px;padding:18px;color:#744338;background:#f0e3df}.empty{padding:60px 24px;text-align:center;background:#ebe7de}.empty h3{margin:0;font-size:2.2rem}.empty p{color:#686b65}@media(max-width:900px){.history-card{grid-template-columns:1fr 1fr}.history-main{grid-column:1/-1}.return-item{grid-template-columns:1fr 100px}.item-note{grid-column:1/-1}}@media(max-width:800px){.account-page{width:calc(100% - 32px);padding-top:48px}.account-heading{align-items:start;flex-direction:column}.account-grid{grid-template-columns:1fr;margin-bottom:65px}}@media(max-width:560px){.history-card{grid-template-columns:1fr}.history-main{grid-column:auto}.return-item{grid-template-columns:1fr}.item-note{grid-column:auto}.return-order summary{align-items:start;flex-direction:column}.shipping,.general-note{max-width:none}}
+</style>
