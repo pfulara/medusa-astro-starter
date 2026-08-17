@@ -1,33 +1,33 @@
 # medusa-astro-starter
 
-Niezależny storefront Astro SSR dla backendu Medusa 2. Repozytorium nie wymaga kodu backendu ani nadrzędnego workspace'u.
+An independent Astro SSR storefront for a Medusa 2 backend. This repository does not require the backend source code or a parent workspace.
 
-## Wymagania
+## Requirements
 
-- Node.js 22.12 lub nowszy
+- Node.js 22.12 or newer
 - pnpm 11 (`corepack enable`)
-- dostępny przez HTTPS backend Medusa 2.19
-- publishable API key przypisany do właściwego sales channel
+- a Medusa 2.19 backend available over HTTPS
+- a publishable API key associated with the correct sales channel
 
-## Konfiguracja
+## Configuration
 
-Skopiuj `.env.example` do `.env`:
+Copy `.env.example` to `.env`:
 
 ```dotenv
 BACKEND_URL=http://localhost:9000
 MEDUSA_PUBLISHABLE_KEY=pk_your_publishable_key
 ```
 
-`BACKEND_URL` nie powinien kończyć się ukośnikiem. Obsługiwane są też wcześniejsze nazwy `PUBLIC_MEDUSA_BACKEND_URL`, `PUBLIC_MEDUSA_PUBLISHABLE_KEY` i `PUBLISHABLE_KEY`.
+`BACKEND_URL` should not end with a slash. The legacy `PUBLIC_MEDUSA_BACKEND_URL`, `PUBLIC_MEDUSA_PUBLISHABLE_KEY`, and `PUBLISHABLE_KEY` names are also supported.
 
-Po stronie backendu ustaw origin storefrontu w obu zmiennych:
+Add the storefront origin to both backend variables:
 
 ```dotenv
 STORE_CORS=http://localhost:8000
 AUTH_CORS=http://localhost:8000,http://localhost:9000
 ```
 
-Bez tego przeglądarka zablokuje operacje wykonywane bezpośrednio z frontendu (m.in. koszyk). Zmiana CORS wymaga restartu backendu.
+Without this configuration, the browser will block operations performed directly by the frontend, including cart requests. Restart the backend after changing its CORS configuration.
 
 ## Development
 
@@ -37,18 +37,18 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Aplikacja jest dostępna pod `http://localhost:8000`.
+The application is available at `http://localhost:8000`.
 
-Przed wysłaniem zmian uruchom:
+Before submitting changes, run:
 
 ```bash
 pnpm exec astro check
 pnpm build
 ```
 
-## Produkcja
+## Production
 
-To aplikacja SSR z adapterem Node, a nie zestaw plików statycznych. Platforma musi uruchamiać proces Node i udostępnić zapisywalną przestrzeń dla sesji `.astro/session`.
+This is an SSR application using the Node adapter, not a static site. The hosting platform must run a Node.js process and provide writable storage for `.astro/session`.
 
 ```bash
 corepack enable
@@ -59,30 +59,30 @@ MEDUSA_PUBLISHABLE_KEY=pk_example \
 HOST=0.0.0.0 PORT=8000 pnpm start
 ```
 
-Na platformie hostingowej ustaw:
+Configure the hosting platform with:
 
 - build command: `pnpm install --frozen-lockfile && pnpm build`
 - start command: `pnpm start`
-- port: wartość zmiennej `PORT` (domyślnie konfiguracja Astro używa `8000`)
-- runtime env: `BACKEND_URL` i `MEDUSA_PUBLISHABLE_KEY`
+- port: the value of `PORT` (the Astro configuration defaults to `8000`)
+- runtime environment variables: `BACKEND_URL` and `MEDUSA_PUBLISHABLE_KEY`
 
-URL backendu jest używany zarówno przez serwer SSR, jak i przekazywany do kodu koszyka w przeglądarce. Nie jest sekretem. Publishable API key również może być publiczny; nie używaj tu secret API key.
+The backend URL is used by the SSR server and passed to the browser-side cart code. It is not a secret. The publishable API key may also be public; never use a secret API key here.
 
-## Warunki niezależnego wdrożenia
+## Independent deployment requirements
 
-Samodzielny klon działa bez repo backendu, ponieważ korzysta wyłącznie z opublikowanych pakietów npm i publicznego API Medusy. Backend musi jednak spełnić wszystkie poniższe warunki:
+A standalone clone works without the backend repository because it uses only published npm packages and the public Medusa API. The backend must still meet all of the following requirements:
 
-- publiczny URL jest osiągalny z serwera hostingu oraz przeglądarek klientów;
-- certyfikat HTTPS jest poprawny (na stronie HTTPS backend także musi używać HTTPS);
-- origin storefrontu znajduje się w `STORE_CORS` i `AUTH_CORS`;
-- publishable key jest aktywny i przypisany do sales channel;
-- istnieje przynajmniej jeden region sprzedaży; produkty, ceny, stock location, shipping i provider płatności są poprawnie skonfigurowane.
+- its public URL is reachable from both the hosting server and customer browsers;
+- it has a valid HTTPS certificate; an HTTPS storefront must also use an HTTPS backend;
+- the storefront origin is included in `STORE_CORS` and `AUTH_CORS`;
+- the publishable API key is active and associated with a sales channel;
+- at least one sales region exists, and products, prices, stock locations, shipping, and payment providers are configured correctly.
 
-## Skrypty
+## Scripts
 
 ```bash
-pnpm dev      # serwer developerski
-pnpm build    # build produkcyjny do dist/
-pnpm start    # uruchomienie dist/server/entry.mjs
-pnpm preview  # alias startu produkcyjnego
+pnpm dev      # start the development server
+pnpm build    # create a production build in dist/
+pnpm start    # run dist/server/entry.mjs
+pnpm preview  # alias for the production start command
 ```
