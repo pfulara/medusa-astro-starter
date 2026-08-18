@@ -14,7 +14,7 @@ An independent Astro SSR storefront for a Medusa 2 backend. This repository does
 Copy `.env.example` to `.env`:
 
 ```dotenv
-BACKEND_URL=http://localhost:9000
+PUBLIC_MEDUSA_BACKEND_URL=http://localhost:9000
 MEDUSA_PUBLISHABLE_KEY=pk_your_publishable_key
 ```
 
